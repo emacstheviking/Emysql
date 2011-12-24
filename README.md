@@ -6,7 +6,7 @@ While you can use mysql via ODBC, using a driver, like Emysql, should perform be
 
 [Emysql][1] is a cleaner rewrite of [erlang-mysql-driver][2], see [History][]. This fork is a direct continuation of the original [emysql][1] with [fixes][], [updates][], more [documentation][docs] and [samples][Samples]. 
 
-**This is the master branch. Should you run into problems, please report them and try if they go away by checking out the 'stable' branch. Thank you.**
+**This is NOT THE MASTER. It has been modified so that all record definitions are prefixed with the string "emysql_" to prevent name clashes. Should you run into problems, please report them and try if they go away by checking out the 'stable' branch. Thank you.**
 
 <hr/>
 
