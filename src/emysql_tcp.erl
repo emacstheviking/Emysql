@@ -34,7 +34,7 @@
 -define(ETS_SELECT(TableID), ets:select(TableID,[{{'_','$2'},[],['$2']}])).
 
 send_and_recv_packet(Sock, Packet, SeqNum) ->
-	io:format("~nsend_and_receive_packet: SEND SeqNum: ~p, Binary: ~p~n", [SeqNum, <<(size(Packet)):24/little, SeqNum:8, Packet/binary>>]),
+	%-% io:format("~nsend_and_receive_packet: SEND SeqNum: ~p, Binary: ~p~n", [SeqNum, <<(size(Packet)):24/little, SeqNum:8, Packet/binary>>]),
 	%-% io:format("~p send_and_recv_packet: send~n", [self()]),
 	case gen_tcp:send(Sock, <<(size(Packet)):24/little, SeqNum:8, Packet/binary>>) of
 		ok -> 
@@ -49,10 +49,10 @@ send_and_recv_packet(Sock, Packet, SeqNum) ->
 		% This is a bit murky. It's compatible with former Emysql versions
 		% but sometimes returns a list, e.g. for stored procedures,
 		% since an extra OK package is sent at the end of their results.
-		[Record | []] ->
+		[Record | []] -> 
 			%-% io:format("~p send_and_recv_packet: record~n", [self()]),
 			Record;
-		List ->
+		List -> 
 			%-% io:format("~p send_and_recv_packet: list~n", [self()]),
 			List
 	end.
@@ -71,65 +71,65 @@ recv_packet(Sock) ->
 	%-% io:format("~p recv_packet: recv_packet_body~n", [self()]),
 	Data = recv_packet_body(Sock, PacketLength),
 	%-% io:format("~nrecv_packet: len: ~p, data: ~p~n", [PacketLength, Data]),
-	#packet{size=PacketLength, seq_num=SeqNum, data=Data}.
+	#emysql_packet{size=PacketLength, seq_num=SeqNum, data=Data}.
 
 % OK response: first byte 0. See -1-
-response(_Sock, #packet{seq_num = SeqNum, data = <<0:8, Rest/binary>>}=_Packet) ->
+response(_Sock, #emysql_packet{seq_num = SeqNum, data = <<0:8, Rest/binary>>}=_Packet) ->
 	%-% io:format("~nresponse (OK): ~p~n", [_Packet]),
 	{AffectedRows, Rest1} = emysql_util:length_coded_binary(Rest),
 	{InsertId, Rest2} = emysql_util:length_coded_binary(Rest1),
 	<<ServerStatus:16/little, WarningCount:16/little, Msg/binary>> = Rest2, % (*)!
 	%-% io:format("- warnings: ~p~n", [WarningCount]),
 	%-% io:format("- server status: ~p~n", [emysql_conn:hstate(ServerStatus)]),
-	{ #ok_packet{
+	{ #emysql_ok_packet{
 		seq_num = SeqNum,
 		affected_rows = AffectedRows,
 		insert_id = InsertId,
 		status = ServerStatus,
 		warning_count = WarningCount,
-		msg = unicode:characters_to_list(Msg) },
+		msg = binary_to_list(Msg) },
 	  ServerStatus };
 
 % EOF: MySQL format <= 4.0, single byte. See -2-
-response(_Sock, #packet{seq_num = SeqNum, data = <<?RESP_EOF:8>>}=_Packet) ->
+response(_Sock, #emysql_packet{seq_num = SeqNum, data = <<?RESP_EOF:8>>}=_Packet) ->
 	%-% io:format("~nresponse (EOF v 4.0): ~p~n", [_Packet]),
-	{ #eof_packet{
+	{ #emysql_eof_packet{
 		seq_num = SeqNum },
 	  ?SERVER_NO_STATUS };
 
 % EOF: MySQL format >= 4.1, with warnings and status. See -2-
-response(_Sock, #packet{seq_num = SeqNum, data = <<?RESP_EOF:8, WarningCount:16/little, ServerStatus:16/little>>}=_Packet) -> % (*)!
+response(_Sock, #emysql_packet{seq_num = SeqNum, data = <<?RESP_EOF:8, WarningCount:16/little, ServerStatus:16/little>>}=_Packet) -> % (*)!
 	%-% io:format("~nresponse (EOF v 4.1), Warn Count: ~p, Status ~p, Raw: ~p~n", [WarningCount, ServerStatus, _Packet]),
 	%-% io:format("- warnings: ~p~n", [WarningCount]),
 	%-% io:format("- server status: ~p~n", [emysql_conn:hstate(ServerStatus)]),
-	{ #eof_packet{
+	{ #emysql_eof_packet{
 		seq_num = SeqNum,
 		status = ServerStatus,
 		warning_count = WarningCount },
 	  ServerStatus };
 
 % ERROR response: MySQL format >= 4.1. See -3-
-response(_Sock, #packet{seq_num = SeqNum, data = <<255:8, ErrNo:16/little, "#", SQLState:5/binary-unit:8, Msg/binary>>}=_Packet) ->
+response(_Sock, #emysql_packet{seq_num = SeqNum, data = <<255:8, ErrNo:16/little, "#", SQLState:5/binary-unit:8, Msg/binary>>}=_Packet) ->
 	%-% io:format("~nresponse (Response is ERROR): SeqNum: ~p, Packet: ~p~n", [SeqNum, _Packet]),
-	{ #error_packet{
+	{ #emysql_error_packet{
 		seq_num = SeqNum,
 		code = ErrNo,
 		status = SQLState,
-		msg = binary_to_list(Msg) }, % todo: test and possibly conversion to UTF-8
+		msg = binary_to_list(Msg) },
 	 ?SERVER_NO_STATUS };
 
-% ERROR response: MySQL format <= 4.0. See -3-
-response(_Sock, #packet{seq_num = SeqNum, data = <<255:8, ErrNo:16/little, Msg/binary>>}=_Packet) ->
+% ERROR response: MySQL format <= 4.0. See -3- 
+response(_Sock, #emysql_packet{seq_num = SeqNum, data = <<255:8, ErrNo:16/little, Msg/binary>>}=_Packet) ->
 	%-% io:format("~nresponse (Response is ERROR): SeqNum: ~p, Packet: ~p~n", [SeqNum, _Packet]),
-	{ #error_packet{
+	{ #emysql_error_packet{
 		seq_num = SeqNum,
 		code = ErrNo,
 		status = 0,
-		msg = binary_to_list(Msg) }, % todo: test and possibly conversion to UTF-8
+		msg = binary_to_list(Msg) }, 
 	 ?SERVER_NO_STATUS };
 
-% DATA response.
-response(Sock, #packet{seq_num = SeqNum, data = Data}=_Packet) ->
+% DATA response. 
+response(Sock, #emysql_packet{seq_num = SeqNum, data = Data}=_Packet) ->
 	%-% io:format("~nresponse (DATA): ~p~n", [_Packet]),
 	{FieldCount, Rest1} = emysql_util:length_coded_binary(Data),
 	{Extra, _} = emysql_util:length_coded_binary(Rest1),
@@ -141,13 +141,13 @@ response(Sock, #packet{seq_num = SeqNum, data = Data}=_Packet) ->
 			ok
 	end,
 	{SeqNum2, Rows, ServerStatus} = recv_row_data(Sock, FieldList, SeqNum1+1),
-	{ #result_packet{
+	{ #emysql_result_packet{
 		seq_num = SeqNum2,
 		field_list = FieldList,
 		rows = Rows,
 		extra = Extra },
 	  ServerStatus }.
-
+	
 recv_packet_header(Sock) ->
 	%-% io:format("~p recv_packet_header~n", [self()]),
 	%-% io:format("~p recv_packet_header: recv~n", [self()]),
@@ -213,13 +213,13 @@ recv_field_list(Sock, SeqNum) ->
 
 recv_field_list(Sock, _SeqNum, Tid, Key) ->
 	case recv_packet(Sock) of
-		#packet{seq_num = SeqNum1, data = <<?RESP_EOF, _WarningCount:16/little, _ServerStatus:16/little>>} -> % (*)!
+		#emysql_packet{seq_num = SeqNum1, data = <<?RESP_EOF, _WarningCount:16/little, _ServerStatus:16/little>>} -> % (*)!
 			%-% io:format("- eof: ~p~n", [emysql_conn:hstate(_ServerStatus)]),
 			{SeqNum1, ?ETS_SELECT(Tid)};
-		#packet{seq_num = SeqNum1, data = <<?RESP_EOF, _/binary>>} ->
+		#emysql_packet{seq_num = SeqNum1, data = <<?RESP_EOF, _/binary>>} ->
 			%-% io:format("- eof~n", []),
 			{SeqNum1, ?ETS_SELECT(Tid)};
-		#packet{seq_num = SeqNum1, data = Data} ->
+		#emysql_packet{seq_num = SeqNum1, data = Data} ->
 			{Catalog, Rest2} = emysql_util:length_coded_string(Data),
 			{Db, Rest3} = emysql_util:length_coded_string(Rest2),
 			{Table, Rest4} = emysql_util:length_coded_string(Rest3),
@@ -229,7 +229,7 @@ recv_field_list(Sock, _SeqNum, Tid, Key) ->
 			<<_:1/binary, CharSetNr:16/little, Length:32/little, Rest8/binary>> = Rest7,
 			<<Type:8/little, Flags:16/little, Decimals:8/little, _:2/binary, Rest9/binary>> = Rest8,
 			{Default, _} = emysql_util:length_coded_binary(Rest9),
-			Field = #field{
+			Field = #emysql_field{
 				seq_num = SeqNum1,
 				catalog = Catalog,
 				db = Db,
@@ -257,13 +257,13 @@ recv_row_data(Sock, FieldList, SeqNum) ->
 recv_row_data(Sock, FieldList, _SeqNum, Tid, Key) ->
 	%-% io:format("~nreceive row ~p: ", [Key]),
 	case recv_packet(Sock) of
-		#packet{seq_num = SeqNum1, data = <<?RESP_EOF, _WarningCount:16/little, ServerStatus:16/little>>} ->
+		#emysql_packet{seq_num = SeqNum1, data = <<?RESP_EOF, _WarningCount:16/little, ServerStatus:16/little>>} ->
 			%-% io:format("- eof: ~p~n", [emysql_conn:hstate(ServerStatus)]),
 			{SeqNum1, ?ETS_SELECT(Tid), ServerStatus};
-		#packet{seq_num = SeqNum1, data = <<?RESP_EOF, _/binary>>} ->
+		#emysql_packet{seq_num = SeqNum1, data = <<?RESP_EOF, _/binary>>} ->
 			%-% io:format("- eof.~n", []),
 			{SeqNum1, ?ETS_SELECT(Tid), ?SERVER_NO_STATUS};
-		#packet{seq_num = SeqNum1, data = RowData} ->
+		#emysql_packet{seq_num = SeqNum1, data = RowData} ->
 			%-% io:format("Seq: ~p raw: ~p~n", [SeqNum1, RowData]),
 			Row = decode_row_data(RowData, FieldList, []),
 			ets:insert(Tid, {Key, Row}),
@@ -279,7 +279,7 @@ decode_row_data(Bin, [Field|Rest], Acc) ->
 type_cast_row_data(undefined, _) ->
 	undefined;
 
-type_cast_row_data(Data, #field{type=Type})
+type_cast_row_data(Data, #emysql_field{type=Type})
 	when Type == ?FIELD_TYPE_VARCHAR;
 		Type == ?FIELD_TYPE_TINY_BLOB;
 		Type == ?FIELD_TYPE_MEDIUM_BLOB;
@@ -289,71 +289,62 @@ type_cast_row_data(Data, #field{type=Type})
 		Type == ?FIELD_TYPE_STRING ->
 	Data;
 
-type_cast_row_data(Data, #field{type=Type})
+type_cast_row_data(Data, #emysql_field{type=Type})
 	when Type == ?FIELD_TYPE_TINY;
 		Type == ?FIELD_TYPE_SHORT;
 		Type == ?FIELD_TYPE_LONG;
 		Type == ?FIELD_TYPE_LONGLONG;
 		Type == ?FIELD_TYPE_INT24;
 		Type == ?FIELD_TYPE_YEAR ->
-	list_to_integer(binary_to_list(Data));  % note: should not need conversion
+	list_to_integer(binary_to_list(Data));
 
-type_cast_row_data(Data, #field{type=Type, decimals=_Decimals})
+type_cast_row_data(Data, #emysql_field{type=Type, decimals=_Decimals})
 	when Type == ?FIELD_TYPE_DECIMAL;
 		Type == ?FIELD_TYPE_NEWDECIMAL;
 		Type == ?FIELD_TYPE_FLOAT;
 		Type == ?FIELD_TYPE_DOUBLE ->
 	{ok, [Num], _Leftovers} = case io_lib:fread("~f", binary_to_list(Data)) of
-										   % note: does not need conversion
-		{error, _} ->
-		  case io_lib:fread("~d", binary_to_list(Data)) of  % note: does not need conversion
-		    {ok, [_], []} = Res ->
-		      Res;
-		    {ok, [X], E} ->
-		      io_lib:fread("~f", lists:flatten(io_lib:format("~w~s~s" ,[X,".0",E])))
-		  end
-		;
-		Res ->
-		  Res
+		{error, _} -> io_lib:fread("~d", binary_to_list(Data));
+		Res -> Res
 	end,
 	Num;
 	%try_formats(["~f", "~d"], binary_to_list(Data));
 
-type_cast_row_data(Data, #field{type=Type})
+type_cast_row_data(Data, #emysql_field{type=Type})
 	when Type == ?FIELD_TYPE_DATE ->
-	case io_lib:fread("~d-~d-~d", binary_to_list(Data)) of  % note: does not need conversion
+	case io_lib:fread("~d-~d-~d", binary_to_list(Data)) of
 		{ok, [Year, Month, Day], _} ->
 			{date, {Year, Month, Day}};
 		{error, _} ->
-			binary_to_list(Data);  % todo: test and possibly conversion to UTF-8
+			binary_to_list(Data);
 		_ ->
 			exit({error, bad_date})
 	end;
 
-type_cast_row_data(Data, #field{type=Type})
+type_cast_row_data(Data, #emysql_field{type=Type})
 	when Type == ?FIELD_TYPE_TIME ->
-	case io_lib:fread("~d:~d:~d", binary_to_list(Data)) of  % note: does not need conversion
+	case io_lib:fread("~d:~d:~d", binary_to_list(Data)) of
 		{ok, [Hour, Minute, Second], _} ->
 			{time, {Hour, Minute, Second}};
 		{error, _} ->
-			binary_to_list(Data);  % todo: test and possibly conversion to UTF-8
+			binary_to_list(Data);
 		_ ->
 			exit({error, bad_time})
 	end;
 
-type_cast_row_data(Data, #field{type=Type})
+type_cast_row_data(Data, #emysql_field{type=Type})
 	when Type == ?FIELD_TYPE_TIMESTAMP;
 		Type == ?FIELD_TYPE_DATETIME ->
-	case io_lib:fread("~d-~d-~d ~d:~d:~d", binary_to_list(Data)) of % note: does not need conversion
+	case io_lib:fread("~d-~d-~d ~d:~d:~d", binary_to_list(Data)) of
 		{ok, [Year, Month, Day, Hour, Minute, Second], _} ->
 			{datetime, {{Year, Month, Day}, {Hour, Minute, Second}}};
 		{error, _} ->
-			binary_to_list(Data);   % todo: test and possibly conversion to UTF-8
+			binary_to_list(Data);
 		_ ->
 			exit({error, datetime})
 	end;
 
-type_cast_row_data(Data, #field{type=Type})
+type_cast_row_data(Data, #emysql_field{type=Type})
 	when Type == ?FIELD_TYPE_BIT ->
 	case Data of
 		<<1>> -> 1;
@@ -411,7 +402,7 @@ type_cast_row_data(Data, _) -> Data.
 %  1-9 (Length Coded Binary)   insert_id
 %  2                           server_status
 %  n   (until end of packet)   message
-%
+%  
 %  VERSION 4.1
 %  Bytes                       Name
 %  -----                       ----
@@ -421,22 +412,22 @@ type_cast_row_data(Data, _) -> Data.
 %  2                           server_status
 %  2                           warning_count
 %  n   (until end of packet)   message
-%
+%  
 %  field_count:     always = 0
-%
+%  
 %  affected_rows:   = number of rows affected by INSERT/UPDATE/DELETE
-%
-%  insert_id:       If the statement generated any AUTO_INCREMENT number,
+%  
+%  insert_id:       If the statement generated any AUTO_INCREMENT number, 
 %                   it is returned here. Otherwise this field contains 0.
 %                   Note: when using for example a multiple row INSERT the
 %                   insert_id will be from the first row inserted, not from
 %                   last.
-%
+%  
 %  server_status:   = The client can use this to check if the
 %                   command was inside a transaction.
-%
+%  
 %  warning_count:   number of warnings
-%
+%  
 %  message:         For example, after a multi-line INSERT, message might be
 %                   "Records: 3 Duplicates: 0 Warnings: 0"
 % 

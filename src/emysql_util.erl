@@ -30,8 +30,8 @@
 
 -include("emysql.hrl").
 
-field_names(Result) when is_record(Result, result_packet) ->
-	[Field#field.name || Field <- Result#result_packet.field_list].
+field_names(Result) when is_record(Result, emysql_result_packet) ->
+	[Field#emysql_field.name || Field <- Result#emysql_result_packet.field_list].
 
 %% @spec as_record(Result, RecordName, Fields, Fun) -> Result
 %%		Result = #result_packet{}
@@ -51,11 +51,11 @@ field_names(Result) when is_record(Result, result_packet) ->
 %% fetch_foo() ->
 %%	Res = emysql:execute(pool1, "select * from foo"),
 %%	Res:as_record(foo, record_info(fields, foo)).
-as_record(Result, RecordName, Fields, Fun) when is_record(Result, result_packet), is_atom(RecordName), is_list(Fields), is_function(Fun) ->
+as_record(Result, RecordName, Fields, Fun) when is_record(Result, emysql_result_packet), is_atom(RecordName), is_list(Fields), is_function(Fun) ->
 	{Lookup, _} = lists:mapfoldl(
-		fun(#field{name=Name}, Acc) ->
+		fun(#emysql_field{name=Name}, Acc) ->
 			{{binary_to_atom(Name, utf8), Acc}, Acc+1}
-		end, 1, Result#result_packet.field_list),
+		end, 1, Result#emysql_result_packet.field_list),
 	[begin
 		RecordData = [case proplists:get_value(Field, Lookup) of
 				undefined ->
@@ -64,9 +64,9 @@ as_record(Result, RecordName, Fields, Fun) when is_record(Result, result_packet)
 					lists:nth(Index, Row)
 		end || Field <- Fields],
 		Fun(list_to_tuple([RecordName | RecordData]))
-	end || Row <- Result#result_packet.rows].
+	end || Row <- Result#emysql_result_packet.rows].
 
-as_record(Result, RecordName, Fields) when is_record(Result, result_packet), is_atom(RecordName), is_list(Fields) ->
+as_record(Result, RecordName, Fields) when is_record(Result, emysql_result_packet), is_atom(RecordName), is_list(Fields) ->
 	as_record(Result, RecordName, Fields, fun(A) -> A end).
 
 length_coded_binary(<<>>) -> {<<>>, <<>>};
@@ -123,7 +123,6 @@ asciz_binary(<<C:8, Rest/binary>>, Acc) ->
 
 bxor_binary(B1, B2) ->
 	list_to_binary(dualmap(fun (E1, E2) -> E1 bxor E2 end, binary_to_list(B1), binary_to_list(B2))).
-	% note: only call from auth, password hashing, using int list returned from sha.
 
 dualmap(_F, [], []) ->
 	[];
@@ -164,11 +163,11 @@ encode(Val, false) when Val == undefined; Val == null ->
 encode(Val, true) when Val == undefined; Val == null ->
 	<<"null">>;
 encode(Val, false) when is_binary(Val) ->
-	anybin_to_list(quote(Val));
+	binary_to_list(quote(Val));
 encode(Val, true) when is_binary(Val) ->
 	quote(Val);
 encode(Val, true) ->
-	unicode:characters_to_binary(encode(Val,false));
+	list_to_binary(encode(Val,false));
 encode(Val, false) when is_atom(Val) ->
 	quote(atom_to_list(Val));
 encode(Val, false) when is_list(Val) ->
@@ -201,25 +200,14 @@ two_digits(Num) ->
 		_ -> Str
 	end.
 
-%% @doc Quote a string or binary value so that it can be included safely in a
-%% MySQL query. For the quoting, it is converted to a list and back. This
-%% can lead to problems as it is not known in this place, whether the encoding
-%% is latin-1 or utf-8.
-%% @spec quote(x()) -> x()
-%%       x() = list() | binary()
-%% @end
-%% hd/11
+%%  Quote a string or binary value so that it can be included safely in a
+%%  MySQL query.
 quote(String) when is_list(String) ->
 	[39 | lists:reverse([39 | quote(String, [])])]; %% 39 is $'
 quote(Bin) when is_binary(Bin) ->
 	list_to_binary(quote(binary_to_list(Bin))).
-	% note: this is a bytewise inspection that works for unicode, too.
 
-%% @doc  Make MySQL-safe backslash escapes before 10, 13, \, 26, 34, 39. 
-%% @spec quote(list(), []) -> list() 
 %% @private
-%% @end
-%% hd/11
 quote([], Acc) ->
 	Acc;
 quote([0 | Rest], Acc) ->
@@ -238,38 +226,3 @@ quote([26 | Rest], Acc) ->
 	quote(Rest, [$Z, $\\ | Acc]);
 quote([C | Rest], Acc) ->
 	quote(Rest, [C | Acc]).
-
-% anybin_to_list(Bin) when is_binary(Bin) ->
-%	case unicode:characters_to_list(Bin) of
-%		{incomplete,_,_} -> binary_to_list(Bin);
-%		Uni -> Uni
-%	end.
-
-% anybin_to_list(Bin) when is_binary(Bin) ->
-%	unicode:characters_to_list(Bin).
-%	binary_to_list(Bin).
-
-%% UTF-8 is designed in such a way that ISO-latin-1 characters with 
-%% numbers beyond the 7-bit ASCII range are seldom considered valid
-%% when decoded as UTF-8. Therefore one can usually use heuristics 
-%% to determine if a file is in UTF-8 or if it is encoded in 
-%% ISO-latin-1 (one byte per character) encoding. The unicode module
-%% can be used to determine if data can be interpreted as UTF-8.
-%% Source: http://www.erlang.org/doc/apps/stdlib/unicode_usage.html
-
-anybin_to_list(Bin) when is_binary(Bin) ->
-    case unicode:characters_to_binary(Bin,utf8,utf8) of
-		Bin -> unicode:characters_to_list(Bin);
-		_ -> binary_to_list(Bin)
-    end.
-
-any_to_binary(L) when is_binary(L) ->
-	L;
-any_to_binary(L) when is_list(L) ->
-	case unicode:characters_to_binary(L) of
-		{error,_,_} -> list_to_binary(L);
-	    B -> case unicode:characters_to_list(B,utf8) of
-			L -> B;
-			_ -> list_to_binary(L)
-	    end
-    end.

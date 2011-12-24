@@ -43,7 +43,7 @@ stop(_State) ->
 		fun(Pool) ->
 			lists:foreach(
 				fun emysql_conn:close_connection/1,
-				lists:append(queue:to_list(Pool#pool.available), gb_trees:values(Pool#pool.locked))
+				lists:append(queue:to_list(Pool#emysql_pool.available), gb_trees:values(Pool#emysql_pool.locked))
 			)
 		end,
 		emysql_conn_mgr:pools()

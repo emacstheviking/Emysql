@@ -144,7 +144,7 @@ handle_call(waiting, _From, State) ->
 	{reply, State#state.waiting, State};
 
 handle_call({add_pool, Pool}, _From, State) ->
-	case find_pool(Pool#pool.pool_id, State#state.pools, []) of
+	case find_pool(Pool# emysql_pool.pool_id, State#state.pools, []) of
 		{_, _} ->
 			{reply, {error, pool_already_exists}, State};
 		undefined ->
@@ -162,9 +162,9 @@ handle_call({remove_pool, PoolId}, _From, State) ->
 handle_call({add_connections, PoolId, Conns}, _From, State) ->
 	case find_pool(PoolId, State#state.pools, []) of
 		{Pool, OtherPools} ->
-			OtherConns = Pool#pool.available,
+			OtherConns = Pool# emysql_pool.available,
 			State1 = State#state{
-				pools = [Pool#pool{available = queue:join(queue:from_list(Conns), OtherConns)}|OtherPools]
+				pools = [Pool# emysql_pool{available = queue:join(queue:from_list(Conns), OtherConns)}|OtherPools]
 			},
 			{reply, ok, State1};
 		undefined ->
@@ -174,13 +174,13 @@ handle_call({add_connections, PoolId, Conns}, _From, State) ->
 handle_call({remove_connections, PoolId, Num}, _From, State) ->
 	case find_pool(PoolId, State#state.pools, []) of
 		{Pool, OtherPools} ->
-			case Num > queue:len(Pool#pool.available) of
+			case Num > queue:len(Pool# emysql_pool.available) of
 				true ->
-					State1 = State#state{pools = [Pool#pool{available = queue:new()}]},
-					{reply, queue:to_list(Pool#pool.available), State1};
+					State1 = State#state{pools = [Pool# emysql_pool{available = queue:new()}]},
+					{reply, queue:to_list(Pool# emysql_pool.available), State1};
 				false ->
-					{Conns, OtherConns} = queue:split(Num, Pool#pool.available),
-					State1 = State#state{pools = [Pool#pool{available = OtherConns}|OtherPools]},
+					{Conns, OtherConns} = queue:split(Num, Pool# emysql_pool.available),
+					State1 = State#state{pools = [Pool# emysql_pool{available = OtherConns}|OtherPools]},
 					{reply, queue:to_list(Conns), State1}
 			end;
 		undefined ->
@@ -201,8 +201,8 @@ handle_call({lock_connection, PoolId}, _From, State) ->
 		[Pool, OtherPools, Conn, OtherConns] ->
             %-% io:format("gen srv: lock connection ... found a good next connection~n", []),
 			NewConn = Conn#emysql_connection{locked_at=lists:nth(2, tuple_to_list(now()))},
-			Locked = gb_trees:enter(NewConn#emysql_connection.id, NewConn, Pool#pool.locked),
-			State1 = State#state{pools = [Pool#pool{available=OtherConns, locked=Locked}|OtherPools]},
+			Locked = gb_trees:enter(NewConn#emysql_connection.id, NewConn, Pool# emysql_pool.locked),
+			State1 = State#state{pools = [Pool# emysql_pool{available=OtherConns, locked=Locked}|OtherPools]},
 			{reply, NewConn, State1};
 		Other ->
             %-% io:format("gen srv: lock connection ... some other result: ~p~n", [Other]),
@@ -224,9 +224,9 @@ handle_call({replace_connection_as_available, OldConn, NewConn}, _From, State) -
 	%% old connection as new connection, to preserve the pool size.
 	case find_pool(OldConn#emysql_connection.pool_id, State#state.pools, []) of
 		{Pool, OtherPools} ->
-			Pool1 = Pool#pool{
-				available = queue:in(NewConn, Pool#pool.available),
-				locked = gb_trees:delete_any(OldConn#emysql_connection.id, Pool#pool.locked)
+			Pool1 = Pool# emysql_pool{
+				available = queue:in(NewConn, Pool# emysql_pool.available),
+				locked = gb_trees:delete_any(OldConn#emysql_connection.id, Pool# emysql_pool.locked)
 			},
 			{reply, ok, State#state{pools=[Pool1|OtherPools]}};
 		undefined ->
@@ -239,9 +239,9 @@ handle_call({replace_connection_as_locked, OldConn, NewConn}, _From, State) ->
 	%% without having to lock another connection.
 	case find_pool(OldConn#emysql_connection.pool_id, State#state.pools, []) of
 		{Pool, OtherPools} ->
-            LockedStripped = gb_trees:delete_any(OldConn#emysql_connection.id, Pool#pool.locked),
+            LockedStripped = gb_trees:delete_any(OldConn#emysql_connection.id, Pool# emysql_pool.locked),
             LockedAdded = gb_trees:enter(NewConn#emysql_connection.id, NewConn, LockedStripped),
-		    Pool1 = Pool#pool{locked = LockedAdded},
+		    Pool1 = Pool# emysql_pool{locked = LockedAdded},
 			{reply, ok, State#state{pools=[Pool1|OtherPools]}};
 		undefined ->
 			{reply, {error, pool_not_found}, State}
@@ -292,7 +292,7 @@ initialize_pools() ->
 	%% file we will initialize and empty set of pools. Otherwise, the
 	%% values defined in the config are used to initialize the state.
 	[
-		#pool{
+		# emysql_pool{
 			pool_id = PoolId,
 			size = proplists:get_value(size, Props, 1),
 			user = proplists:get_value(user, Props),
@@ -306,7 +306,7 @@ initialize_pools() ->
 
 find_pool(_, [], _) -> undefined;
 
-find_pool(PoolId, [#pool{pool_id = PoolId} = Pool|Tail], OtherPools) ->
+find_pool(PoolId, [# emysql_pool{pool_id = PoolId} = Pool|Tail], OtherPools) ->
 	{Pool, lists:append(OtherPools, Tail)};
 
 find_pool(PoolId, [Pool|Tail], OtherPools) ->
@@ -318,7 +318,7 @@ find_next_connection_in_pool(Pools, PoolId) ->
 		    % check no of connection in Pool
 		    %-% io:format("~p Pool ~p Connections available: ~p~n", [self(), PoolId, queue:len(Pool#pool.available)]),
 		    %-% io:format("~p Pool ~p Connections locked: ~p~n", [self(), PoolId, gb_trees:size(Pool#pool.locked)]),
-			case queue:out(Pool#pool.available) of
+			case queue:out(Pool# emysql_pool.available) of
 				{{value, Conn}, OtherConns} ->
 					[Pool, OtherPools, Conn, OtherConns];
 				{empty, _} ->
@@ -337,13 +337,13 @@ pass_on_or_queue_as_available(State, Connection, Waiting) ->
 			case find_pool(Connection#emysql_connection.pool_id, State#state.pools, []) of
 				{Pool, OtherPools} ->
 					%% find connection in locked tree
-					case gb_trees:lookup(Connection#emysql_connection.id, Pool#pool.locked) of
+					case gb_trees:lookup(Connection#emysql_connection.id, Pool# emysql_pool.locked) of
 						{value, Conn} ->
 					    %%%
 							%% add it to the available queue and remove from locked tree
-							Pool1 = Pool#pool{
-								available = queue:in(Conn#emysql_connection{locked_at=undefined}, Pool#pool.available),
-								locked = gb_trees:delete_any(Connection#emysql_connection.id, Pool#pool.locked)
+							Pool1 = Pool# emysql_pool{
+								available = queue:in(Conn#emysql_connection{locked_at=undefined}, Pool# emysql_pool.available),
+								locked = gb_trees:delete_any(Connection#emysql_connection.id, Pool# emysql_pool.locked)
 							},
 							{ok, State#state{pools = [Pool1|OtherPools]}};
 						%%%

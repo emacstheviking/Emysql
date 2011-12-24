@@ -15,7 +15,7 @@
 %% 
 %% The above  copyright notice and this permission notice shall be
 %% included in all copies or substantial portions of the Software.
-%%
+%% 
 %% THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
 %% EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
 %% OF  MERCHANTABILITY,  FITNESS  FOR  A  PARTICULAR  PURPOSE  AND
@@ -26,15 +26,15 @@
 %% OTHER DEALINGS IN THE SOFTWARE.
 
 
--record(pool, {pool_id, size, user, password, host, port, database, encoding, available=queue:new(), locked=gb_trees:empty()}).
+-record(emysql_pool, {pool_id, size, user, password, host, port, database, encoding, available=queue:new(), locked=gb_trees:empty()}).
 -record(emysql_connection, {id, pool_id, socket, version, thread_id, caps, language, prepared=gb_trees:empty(), locked_at, alive=true}).
--record(greeting, {protocol_version, server_version, thread_id, salt1, salt2, caps, caps_high, language, status, seq_num, plugin}).
--record(field, {seq_num, catalog, db, table, org_table, name, org_name, type, default, charset_nr, length, flags, decimals}).
--record(packet, {size, seq_num, data}).
--record(ok_packet, {seq_num, affected_rows, insert_id, status, warning_count, msg}).
--record(error_packet, {seq_num, code, status, msg}).
--record(eof_packet, {seq_num, status, warning_count}). % extended to mySQL 4.1+ format
--record(result_packet, {seq_num, field_list, rows, extra}).
+-record(emysql_greeting, {protocol_version, server_version, thread_id, salt1, salt2, caps, caps_high, language, status, seq_num, plugin}).
+-record(emysql_field, {seq_num, catalog, db, table, org_table, name, org_name, type, default, charset_nr, length, flags, decimals}).
+-record(emysql_packet, {size, seq_num, data}).
+-record(emysql_ok_packet, {seq_num, affected_rows, insert_id, status, warning_count, msg}).
+-record(emysql_error_packet, {seq_num, code, status, msg}).
+-record(emysql_eof_packet, {seq_num, status, warning_count}). % extended to mySQL 4.1+ format
+-record(emysql_result_packet, {seq_num, field_list, rows, extra}).
 
 -define(TIMEOUT, 8000).
 -define(LOCK_TIMEOUT, 5000).
@@ -119,16 +119,16 @@
 %  The server was able to fulfill the clients request and opened a
 %  read-only non-scrollable cursor for a query. This flag comes
 %  in reply to COM_STMT_EXECUTE and COM_STMT_FETCH commands.
--define(SERVER_STATUS_CURSOR_EXISTS, 64).
+-define(SERVER_STATUS_CURSOR_EXISTS, 64). 
 
 %  This flag is sent when a read-only cursor is exhausted, in reply to
 %  COM_STMT_FETCH command.
 -define(SERVER_STATUS_LAST_ROW_SENT, 128).
--define(SERVER_STATUS_DB_DROPPED, 256). % A database was dropped
+-define(SERVER_STATUS_DB_DROPPED, 256). % A database was dropped 
 -define(SERVER_STATUS_NO_BACKSLASH_ESCAPES, 512).
 
 %  Sent to the client if after a prepared statement reprepare
-%  we discovered that the new statement returns a different
+%  we discovered that the new statement returns a different 
 %  number of result set columns.
 -define(SERVER_STATUS_METADATA_CHANGED, 1024).
 
